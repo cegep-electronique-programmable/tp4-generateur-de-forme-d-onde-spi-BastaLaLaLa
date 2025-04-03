@@ -3,7 +3,7 @@
  * Maxime Champagne
  * 3 mars 2022
  * 
- * ModifiÈ par
+ * Modifi√© par Sebastian Lencinas
  *
  *
  * SPI/main.c
@@ -39,82 +39,113 @@ uint8_t const tri[MAX] ={
 
 void out_dig(uint8_t x);
 void sinus_60(void);
-//void myTimer1_ISR(void);
+void myTimer1_ISR(void);
+void changement(void);
+
+char TypeOndes;
+char ChoixHz;
+
+uint8_t Hz[5] = {20, 40, 60, 80, 100};
+                       // 20Hz   40Hz   60Hz   80Hz   100Hz
+uint16_t frequence[5] = {0xF05F,0xF448,0xF830,0xFC18,0xFE0C};
+uint8_t ChoixF = 4;
 
 /*
                          Main application
  */
 void main(void)
 {
-    uint8_t valeur, lecture;
-    float tension;
-    
     SYSTEM_Initialize();
-    
-    //INTERRUPT_GlobalInterruptEnable();
-    
-    //INTERRUPT_PeripheralInterruptEnable();
-    
-    //TMR1_SetInterruptHandler(myTimer1_ISR);
+
+    INTERRUPT_GlobalInterruptEnable();
+    INTERRUPT_PeripheralInterruptEnable();
+
+    TMR1_SetInterruptHandler(myTimer1_ISR);
 
     SSPCON1bits.SSPEN = 1;
     IO_RA5_SetHigh();
-    
+
     while (1)
     {
-        
-        
-//        //Code de test pour valider le fonctionnement du potentiomËtre
-//        {
-//            printf("\n\rEntrer une valeur entre 0 et 255, suivie de [Enter]");
-//            valeur = 0;
-//            do
-//            {
-//                do
-//                {
-//                    if(EUSART1_is_rx_ready()){
-//                        lecture = EUSART1_Read();
-//                    }                    
-//                }
-//                while (((lecture < '0') || (lecture > '9')) && (lecture != 0x0d));
-//                if ((lecture >= '0') && (lecture <= '9')) 
-//                {
-//                    valeur = 10 * valeur + lecture - '0';
-//                    putchar(lecture);
-//                }
-//            }
-//        
-//            while ((lecture != 0x0d) && (valeur < 26)); 
-//            tension = (float)5* valeur /256;
-//            printf("\n\rValeur = %u tension = %3.2f ", valeur, tension);
-//            out_dig(valeur);    // envoi sur potentiometre 
-//        } 
-        
-        
-        
-        //Code de test pour gÈnÈrer une onde sinusoidale
-        sinus_60();
-        
-    }
+        // Selection du type l'onde
+        printf("Appuyer sur s, c ou t pour choisir le type d'ondes\n\r");
 
-           
+        do {
+            TypeOndes = EUSART1_Read(); // Lecture EUSART
+
+            switch (TypeOndes) {
+                case 's':
+                    printf("Ondes sinusoidales\n\r");
+                    break;
+                case 't':
+                    printf("Ondes triangulaires\n\r");
+                    break;
+                case 'c':
+                    printf("Ondes carrees\n\r");
+                    break;
+                default:
+                    printf("Mauvais caractere choisi\n\r");
+            }
+
+        } while (!(TypeOndes == 's' || TypeOndes == 'c' || TypeOndes == 't'));  
+        // Boucle pour attendre le bon caractere
+
+        // Choix de frequence
+        do {
+            printf("+ ou - pour changer la fr√©quence\n\r");
+            ChoixHz = EUSART1_Read(); // Lecture EUSART
+
+            switch (ChoixHz) { 
+                case '+':
+                    if (ChoixF < 4) { //si on augmente la frequence
+                        ChoixF++;
+                        printf("%d Hz\n\r", Hz[ChoixF]); // Vitesse frequence Hz
+                    } else {
+                        printf("Maximum atteint (100 Hz)\n\r");
+                    }
+                    break;
+                case '-':
+                    if (ChoixF > 0) { //si on diminue la frequence
+                        ChoixF--;
+                        printf("%d Hz\n\r", Hz[ChoixF]); // Vitesse frequence Hz
+                    } else {
+                        printf("Minimum atteint (20 Hz)\n\r");
+                    }
+                    break;
+                default:
+                    printf("Impossible de changer la fr√©quence, mauvais caract√®re\n\r");
+            }
+
+        } while (!(ChoixHz == '-' || ChoixHz == '+'));  // Boucle si ce n'est pas + ou -
+
+    }           
 }
 
 //---------------------------------------------------------------
 // Routine d'interruption du Timer1
 //---------------------------------------------------------------
-//void myTimer1_ISR(void){
-//    static uint8_t i; 
-//    
-//    TMR1_WriteTimer(0x3456);
-//    
-//    out_dig(sin[i]);
-//    
-//    i++;
-//    if (i==MAX){
-//        i=0;
-//    }
-//}
+void myTimer1_ISR(void){
+    static uint8_t i;
+
+    TMR1_WriteTimer(frequence[ChoixF]);
+
+    switch (TypeOndes) {
+        case 's':
+            out_dig(sin[i]); // Ondes sinusoidale 
+            break;
+        case 't':
+            out_dig(tri[i]); // Ondes triangulaire
+            break;
+        case 'c':
+            out_dig(car[i]); // Ondes carr√©e
+            break;
+    }
+
+    i++;
+    if (i == MAX) {
+        i = 0;
+    }
+}
     
 //----------------------------------------------------------------
 // Transmission au pot. d'une onde comprenant 60 points par cycle.
@@ -124,7 +155,6 @@ void sinus_60(void) {
     while(1) {
         for (i=0;i<MAX;i++) {
             out_dig(sin[i]);
-			__delay_ms(1);
             }
         } 
 }
@@ -133,11 +163,12 @@ void sinus_60(void) {
 //----------------------------------------------------------------
 //  Transmission d'une donnee a la sortie du pot. numerique
 //----------------------------------------------------------------
-void out_dig(uint8_t x)
+void out_dig(uint8_t x) 
 {
-	IO_RA5_SetLow();   // selection du potentiometre
-	SPI_ExchangeByte(0x11);  // ecriture, pot. 0
-	SPI_ExchangeByte(x);
-	IO_RA5_SetHigh();
-	//__delay_ms(1);
+   IO_RA5_SetLow();   // selection du potentiometre
+   SPI_ExchangeByte(0x11);  // ecriture, pot. 0
+   SPI_ExchangeByte(x);
+   IO_RA5_SetHigh();
+   //__delay_ms(1);
 }
+
